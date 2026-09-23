@@ -99,7 +99,6 @@ class _ProjectsListScreenState extends State<ProjectsListScreen> {
                         stream: FirebaseFirestore.instance
                             .collection('tasks')
                             .where('projectId', isEqualTo: project.pid)
-                            .where('assigneA', isEqualTo: userEmail)
                             .snapshots(),
                         builder: (context, taskSnapshot) {
                           double percentage = 0.0;
@@ -126,22 +125,29 @@ class _ProjectsListScreenState extends State<ProjectsListScreen> {
                             if (totalTasks > 0) {
                               percentage = (completedTasks / totalTasks) * 100;
                             } else {
-                              percentage = 100.0; // Si plus de tâches actives, la progression remonte à 100%
+                              percentage = 0.0; 
                             }
                           }
 
                           // 🎛️ FILTRAGE DES ONGLETS
                           bool afficherLaCarte = false;
                           if (_activeTab == 1) {
-                            afficherLaCarte = true;
-                          } else if (_activeTab == 0 && (percentage < 100.0 || totalTasks == 0)) {
-                            afficherLaCarte = true;
-                          } else if (_activeTab == 2 && percentage == 100.0 && totalTasks > 0) {
-                            afficherLaCarte = true;
+                            afficherLaCarte = true; // "All" -> On affiche tout
+                          } else if (_activeTab == 0) {
+                            // "En cours" -> S'affiche si le projet est incomplet (< 100%) OU s'il n'a pas encore de tâches (0%)
+                            if (percentage < 100.0 || totalTasks == 0) {
+                              afficherLaCarte = true;
+                            }
+                          } else if (_activeTab == 2) {
+                            // "Terminé" -> Uniquement si le projet a de vraies tâches et qu'elles sont complétées à 100%
+                            if (percentage == 100.0 && totalTasks > 0) {
+                              afficherLaCarte = true;
+                            }
                           }
 
                           if (!afficherLaCarte) return const SizedBox.shrink();
 
+                          // Renvoie la carte d'interface mise à jour
                           return _buildProjectCardItem(project, totalTasks, percentage, listeDesTasksDuProjet);
                         },
                       );

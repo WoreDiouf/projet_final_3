@@ -73,7 +73,10 @@ class AuthService {
       password: password,
     );
     
-    String photoUrl = imageFile != null ? 'local_cached_image' : '';
+    String finalPhotoPath = "";
+    if (imageFile != null) {
+      finalPhotoPath = imageFile.path; // 💡 Enregistre le vrai chemin (ex: /data/user/0/...) !
+    }
 
     // 🧱 4. Construction de l'instance avec le pseudo nettoyé unique
     UserModel user = UserModel(
@@ -81,7 +84,7 @@ class AuthService {
       nom: cleanedUsername, 
       fullName: fullName.trim(),
       email: email.trim(),
-      photoUrl: photoUrl,
+      photoUrl: finalPhotoPath,
     );
 
     // 📂 5. Enregistrement final dans le document NoSQL Firestore

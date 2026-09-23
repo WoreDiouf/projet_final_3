@@ -123,14 +123,7 @@ class TasksListScreen extends StatelessWidget {
           },
         ),
       ),
-      // 💡 LE CONTRÔLE STRUCTURÉ DU BOUTON : Ne s'affiche pas du tout si masquerBoutonAjout est vrai !
-      floatingActionButton: masquerBoutonAjout 
-          ? null 
-          : FloatingActionButton(
-              onPressed: () {}, // Votre action d'ajout générale de base
-              backgroundColor: AppColors.gradientTop,
-              child: const Icon(Icons.add, color: Colors.white),
-            ),
+      
     );
   }
 }
