@@ -265,10 +265,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('tasks')
-                    .where(
-                      'assigneA',
-                      isEqualTo: userEmail,
-                    ) // 💡 FILTRE STRATEGIQUE NoSQL
+                    .where('assigneA', isEqualTo: userEmail) // Uniquement mes tâches
                     .snapshots(),
                 builder: (context, snapshot) {
                   int countEnCours = 0;
@@ -276,101 +273,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   int countTermine = 0;
                   int countAnnule = 0;
 
-                  if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
-                    final docs = snapshot.data!.docs;
+                  if (snapshot.hasData) {
+                    final allDocs = snapshot.data!.docs;
 
-                    countEnCours = docs
-                        .where((d) => (d.data() as Map)['statut'] == 'enCours')
-                        .length;
-                    countTraitement = docs
-                        .where(
-                          (d) => (d.data() as Map)['statut'] == 'traitement',
-                        )
-                        .length;
-                    countTermine = docs
-                        .where((d) => (d.data() as Map)['statut'] == 'termine')
-                        .length;
-                    countAnnule = docs
-                        .where((d) => (d.data() as Map)['statut'] == 'annule')
-                        .length;
+                    // 🔴 1. Tri immédiat des tâches terminées et annulées fixes
+                    final terminees = allDocs.where((d) => (d.data() as Map)['isDone'] == true || (d.data() as Map)['statut'] == 'termine').toList();
+                    final annulees = allDocs.where((d) => (d.data() as Map)['statut'] == 'annule').toList();
+
+                    countTermine = terminees.length;
+                    countAnnule = annulees.length;
+                    // 🔵 2. Extraction des tâches véritablement ACTIVES (ni finies, ni annulées)
+                    List<DocumentSnapshot> tachesActives = allDocs.where((d) {
+                      final Map data = d.data() as Map;
+                      bool nonFinie = data['isDone'] != true && data['statut'] != 'termine';
+                      bool nonAnnulee = data['statut'] != 'annule';
+                      return nonFinie && nonAnnulee;
+                    }).toList();
+
+                    // 🧠 3. ALGORITHME DE TRADING TEMPOREL D-CLIC
+                    if (tachesActives.isNotEmpty) {
+                      // On trie mathématiquement les tâches de la plus urgente à la plus lointaine
+                      tachesActives.sort((a, b) {
+                        DateTime dateA = ((a.data() as Map)['dateLimite'] as Timestamp).toDate();
+                        DateTime dateB = ((b.data() as Map)['dateLimite'] as Timestamp).toDate();
+                        return dateA.compareTo(dateB); // Ordre chronologique croissant
+                      });
+
+                      // La première (la plus urgente) prend OBLIGATOIREMENT le statut "En cours"
+                      countEnCours = 1;
+
+                      // Toutes les autres (les suivantes en attente) basculent dans "Traitement" !
+                      countTraitement = tachesActives.length - 1;
+                    }
                   }
 
-                  return LayoutBuilder(
-                    builder: (context, constraints) {
-                      return GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: constraints.maxWidth > 600 ? 4 : 2,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                        childAspectRatio: 1.35,
-                        children: [
-                          // 💡 CADRE 1 : EN COURS -> Redirige vers la liste des tâches actives
-                          GestureDetector(
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const TasksListScreen(filterStatut: 'enCours', title: 'Mes Tâches En Cours', masquerBoutonAjout: true),
-                              ),
-                            ),
-                            child: _buildStatCard(
-                              title: 'EN COURS', 
-                              count: countEnCours.toString().padLeft(2, '0'), 
-                              accentColor: const Color(0xFF4A65D2), 
-                              icon: Icons.play_arrow_rounded,
-                            ),
-                          ),
-                          
-                          // 💡 CADRE 2 : TRAITEMENT -> Redirige vers l'écran d'analyse "Mes Projets" (vos processus d'équipe)
-                          GestureDetector(
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const ProjectsListScreen(),
-                              ),
-                            ),
-                            child: _buildStatCard(
-                              title: 'TRAITEMENT', 
-                              count: countTraitement.toString().padLeft(2, '0'), 
-                              accentColor: const Color(0xFF4CE3B2), 
-                              icon: Icons.sync_rounded,
-                            ),
-                          ),
-                          
-                          // 💡 CADRE 3 : TERMINÉ -> Redirige vers l'historique complet des tâches terminées
-                          GestureDetector(
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const TasksListScreen(filterStatut: 'termine', title: 'Mes Tâches Terminées', masquerBoutonAjout: true),
-                              ),
-                            ),
-                            child: _buildStatCard(
-                              title: 'TERMINÉ', 
-                              count: countTermine.toString().padLeft(2, '0'), 
-                              accentColor: const Color(0xFF4CBCE3), 
-                              icon: Icons.check_circle_outline_rounded,
-                            ),
-                          ),
-                          
-                          // 💡 CADRE 4 : ANNULÉ -> Redirige vers l'historique des tâches annulées/supprimées du flux
-                          GestureDetector(
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const TasksListScreen(filterStatut: 'annule', title: 'Mes Tâches Annulées', masquerBoutonAjout: true),
-                              ),
-                            ),
-                            child: _buildStatCard(
-                              title: 'ANNULÉ', 
-                              count: countAnnule.toString().padLeft(2, '0'), 
-                              accentColor: const Color(0xFF7952E5), 
-                              icon: Icons.cancel_outlined,
-                            ),
-                          ),
-                        ],
-                      );
-                    },
+                  // 🎛️ COUPLAGE GÉOMÉTRIQUE AVEC LES 4 CADRES DU DASHBOARD
+                  return GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    childAspectRatio: 1.35,
+                    children: [
+                      // CADRE 1 : EN COURS (La plus urgente)
+                      _buildStatCard(
+                        title: 'EN COURS', 
+                        count: countEnCours.toString().padLeft(2, '0'), 
+                        accentColor: const Color(0xFF4A65D2), 
+                        icon: Icons.play_arrow_rounded,
+                      ),
+                      // CADRE 2 : TRAITEMENT (La file d'attente dynamique)
+                      _buildStatCard(
+                        title: 'TRAITEMENT', 
+                        count: countTraitement.toString().padLeft(2, '0'), 
+                        accentColor: const Color(0xFF4CE3B2), 
+                        icon: Icons.sync_rounded,
+                      ),
+                      // CADRE 3 : TERMINÉ
+                      _buildStatCard(
+                        title: 'TERMINÉ', 
+                        count: countTermine.toString().padLeft(2, '0'), 
+                        accentColor: const Color(0xFF4CBCE3), 
+                        icon: Icons.check_circle_outline_rounded,
+                      ),
+                      // CADRE 4 : ANNULÉ (Géré par votre Soft Delete du Service)
+                      _buildStatCard(
+                        title: 'ANNULÉ', 
+                        count: countAnnule.toString().padLeft(2, '0'), 
+                        accentColor: const Color(0xFF7952E5), 
+                        icon: Icons.cancel_outlined,
+                      ),
+                    ],
                   );
                 },
               ),

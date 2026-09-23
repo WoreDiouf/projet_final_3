@@ -7,9 +7,9 @@ import '../models/task_model.dart';
 import '../providers/task_provider.dart';
 
 class TasksListScreen extends StatelessWidget {
-  final String? filterStatut; // 💡 Reçoit 'enCours', 'termine' ou 'annule'
+  final String? filterStatut; // Reçoit 'enCours', 'termine' ou 'annule'
   final String title;         // Le titre dynamique de l'AppBar
-  final bool masquerBoutonAjout; // 💡 Booléen de contrôle pour le bouton d'ajout
+  final bool masquerBoutonAjout; // Booléen de contrôle pour le bouton d'ajout
 
   const TasksListScreen({
     super.key,
@@ -23,15 +23,10 @@ class TasksListScreen extends StatelessWidget {
     final currentUser = FirebaseAuth.instance.currentUser;
     final String userEmail = currentUser?.email ?? "";
 
-    // Préparation de la requête de base filtrée sur l'e-mail de l'utilisateur connecté
+    // 🔬 Requête globale sur l'utilisateur connecté (Le tri fin s'opère en mémoire locale)
     Query query = FirebaseFirestore.instance
         .collection('tasks')
         .where('assigneA', isEqualTo: userEmail);
-
-    // 🔬 Injection algorithmique du filtre de statut si demandé par le cadre cliqué
-    if (filterStatut != null) {
-      query = query.where('statut', isEqualTo: filterStatut);
-    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -47,22 +42,63 @@ class TasksListScreen extends StatelessWidget {
       ),
       body: SafeArea(
         child: StreamBuilder<QuerySnapshot>(
-          stream: query.snapshots(), // Écoute le flux NoSQL configuré sur mesure
+          stream: query.snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return const Center(child: Text("Aucune tâche trouvée dans cette catégorie.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.black45)));
+              return const Center(child: Text("Aucune tâche trouvée.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.black45)));
             }
 
-            final taskDocs = snapshot.data!.docs;
+            final allDocs = snapshot.data!.docs;
+            List<DocumentSnapshot> filteredDocs = [];
+
+            // 🧠 ALGORITHME DE SYNCHRONISATION DU PIPELINE D'ÉQUIPE D-CLIC
+            if (filterStatut == 'termine') {
+              // Extraction des tâches complétées fixes
+              filteredDocs = allDocs.where((d) => (d.data() as Map)['isDone'] == true || (d.data() as Map)['statut'] == 'termine').toList();
+            } else if (filterStatut == 'annule') {
+              // Extraction des tâches archivées/mises au rebut
+              filteredDocs = allDocs.where((d) => (d.data() as Map)['statut'] == 'annule').toList();
+            } else if (filterStatut == 'enCours' || filterStatut == 'traitement') {
+              // Étape 1 : Isoler toutes les tâches actives (Ni finies, ni annulées)
+              List<DocumentSnapshot> actives = allDocs.where((d) {
+                final Map data = d.data() as Map;
+                bool valide = data['isDone'] != true && data['statut'] != 'termine' && data['statut'] != 'annule';
+                return valide;
+              }).toList();
+
+              // Étape 2 : Tri chronologique strict par date d'échéance la plus proche
+              actives.sort((a, b) {
+                DateTime dateA = ((a.data() as Map)['dateLimite'] as Timestamp).toDate();
+                DateTime dateB = ((b.data() as Map)['dateLimite'] as Timestamp).toDate();
+                return dateA.compareTo(dateB);
+              });
+
+              // Étape 3 : Répartition exclusive selon la règle de file d'attente
+              if (actives.isNotEmpty) {
+                if (filterStatut == 'enCours') {
+                  // Seule la tâche la plus urgente (la première) est acceptée ici
+                  filteredDocs = [actives.first];
+                } else if (filterStatut == 'traitement') {
+                  // Toutes les autres tâches en attente forment la file de traitement
+                  filteredDocs = actives.sublist(1);
+                }
+              }
+            } else {
+              filteredDocs = allDocs; // Mode général de secours
+            }
+
+            if (filteredDocs.isEmpty) {
+              return const Center(child: Text("Aucune tâche dans cette catégorie.", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.black45)));
+            }
 
             return ListView.builder(
               padding: const EdgeInsets.all(24.0),
-              itemCount: taskDocs.length,
+              itemCount: filteredDocs.length,
               itemBuilder: (context, index) {
-                final data = taskDocs[index].data() as Map<String, dynamic>;
+                final data = filteredDocs[index].data() as Map<String, dynamic>;
                 final task = TaskModel.fromMap(data);
-                final String docId = taskDocs[index].id;
+                final String docId = filteredDocs[index].id;
 
                 return Card(
                   color: Colors.white,
@@ -76,11 +112,11 @@ class TasksListScreen extends StatelessWidget {
                         Checkbox(
                           value: task.isDone,
                           activeColor: AppColors.accentStatus,
-                          // 💡 SÉCURITÉ DE FLUX : Si la tâche appartient à l'écran 'annule', on passe l'action à null pour la désactiver !
                           onChanged: filterStatut == 'annule' 
-                              ? null // Rend l'émeraude disabled et impossible à cocher !
+                              ? null // Désactivation matérielle si la tâche est dans la corbeille
                               : (val) async {
-                                  await context.read<TaskProvider>().toggleTaskStatus(docId, task.isDone);
+                                  // 🚀 On transmet l'état actuel (task.isDone) que le Provider va inverser proprement en base NoSQL
+                                  await context.read<TaskProvider>().toggleTaskStatus(docId, task.isDone,data['statut'] ?? 'enCours',);
                                 },
                         ),
                         const SizedBox(width: 8),
@@ -101,7 +137,6 @@ class TasksListScreen extends StatelessWidget {
                           ),
                           onPressed: () async {
                             if (filterStatut == 'annule') {
-                              // 🚨 Destruction physique définitive transitant par le Provider -> Service
                               await context.read<TaskProvider>().permanentlyDeleteTask(docId);
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -109,7 +144,6 @@ class TasksListScreen extends StatelessWidget {
                                 );
                               }
                             } else {
-                              // 📁 Envoi dans l'historique des annulées transitant par le Provider -> Service
                               await context.read<TaskProvider>().removeTask(docId);
                             }
                           },
@@ -123,7 +157,6 @@ class TasksListScreen extends StatelessWidget {
           },
         ),
       ),
-      
     );
   }
 }
