@@ -162,6 +162,6 @@ flutter run
 
 ---
 
-### 🏁 projet officiellement un chef-d'œuvre !
+### 🏁 un chef-d'œuvre officiellement Développé par Woré Diouf!
 
-Développé par Woré Diouf sous le tutorat de Bounyamine Baparape - Programme Professionnalisant D-CLIC / Organisation Internationale de la Francophonie (2026).🚀🎓
+sous le tutorat de Bounyamine Baparape - Programme Professionnalisant D-CLIC / Organisation Internationale de la Francophonie (2026).
